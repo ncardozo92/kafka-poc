@@ -13,13 +13,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Headers;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @Slf4j
@@ -35,12 +37,13 @@ public class PaymentService {
 
     public PaymentResponseDTO executePayment(PaymentRequestDTO request) throws JsonProcessingException {
         String uuid = UUID.randomUUID().toString();
+        Pattern pattern = Pattern.compile("^[\\w-]*[a-f]+$");
 
         Payment payment = new Payment();
         payment.setId(uuid);
         payment.setQr(request.getQr());
         payment.setAmount(request.getAmount());
-        payment.setStatus(uuid.endsWith("F")? Status.REJECTED: Status.ACEPTED);
+        payment.setStatus(pattern.matcher(uuid).matches()? Status.ACEPTED : Status.REJECTED);
 
         payments.put(uuid, payment);
 
@@ -59,14 +62,14 @@ public class PaymentService {
         response.setId(payment.getId());
         response.setStatus(payment.getStatus().toString());
 
-        kafkaTemplate.send(KafkaConfigProperties.getTopicPaymentQueries(), "Anita lava la tina");
+        kafkaTemplate.send(KafkaConfigProperties.getTopicPaymentQueries(), objectMapper.writeValueAsString(response));
 
         return response;
     }
 
     @KafkaListener(topics = {"payment-execution", "payment-queries"}, groupId= "payments")
     public void getPaymentMessage(@Payload String message,
-                                  @Header(KafkaHeaders.TOPIC) String topic){
-        log.info("Message received: {} | topic: {}", message, topic);
+                                  @Headers Map<String, Object> headers){
+        log.info("Message received: {} | topic: {}", message, headers.get(KafkaHeaders.RECEIVED_TOPIC));
     }
 }
